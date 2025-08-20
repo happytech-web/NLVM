@@ -1,0 +1,133 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'eclipse'
+}
+
+group = 'com.example'
+version = '1.0'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['test']
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation files('lib/antlr-4.12.0-complete.jar')
+
+    // Log4j2 核心 API
+    implementation 'org.apache.logging.log4j:log4j-api:2.23.1'
+
+    // Log4j2 实现
+    implementation 'org.apache.logging.log4j:log4j-core:2.23.1'
+
+}
+
+application {
+    mainClass = 'Compiler'
+}
+
+run {
+    systemProperties System.getProperties()
+
+    // 创建logs目录
+    doFirst {
+        mkdir "${projectDir}/logs"
+    }
+
+    // 设置JVM参数，包括日志配置
+    jvmArgs = [
+        "-Dlog4j.configurationFile=${projectDir}/src/main/resources/log4j2.xml",
+        "-Xss1024m"
+    ]
+}
+
+testing {
+    suites {
+        test {
+            useJUnitJupiter('5.9.2')
+            targets.all {
+                testTask.configure {
+                    jvmArgs = ['-Xss1024m']
+                    testLogging {
+                        events = ["passed", "skipped", "failed"]
+                        exceptionFormat = "full"
+                        showStandardStreams = true
+                    }
+                }
+            }
+        }
+    }
+}
+
+// antlr subtask
+
+def grammars = fileTree('util').matching { include '*.g4' }
+
+tasks.register('generateAntlr', Exec) {
+    description = 'Run ANTLR on all .g4 files in util/ → src/frontend'
+    inputs.files grammars
+    outputs.dir file('src/frontend/grammar')
+
+    doFirst {
+        delete 'src/frontend/grammar'
+        mkdir 'src/frontend/grammar'
+    }
+
+    commandLine = [
+        'java', '-jar',
+        "${projectDir}/lib/antlr-4.12.0-complete.jar",
+        '-visitor',
+        '-long-messages',
+        '-o', "${projectDir}/src/frontend/grammar"
+    ] + grammars.files.collect { it.absolutePath }
+
+    doLast {
+        // Delete non-Java files (.tokens, .interp)
+        fileTree('src/frontend/grammar') { include '*.tokens'; include '*.interp' }
+            .each { it.delete() }
+
+        // insert package name into *.java
+        fileTree('src/frontend/grammar').matching { include '**/*.java' }
+            .each { File f ->
+                def content = f.getText('UTF-8')
+                if (!content.startsWith('package ')) {
+                    f.write("package frontend.grammar;\n\n" + content, 'UTF-8')
+                }
+            }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('generateAntlr')
+}
+
+jar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    manifest {
+        attributes 'Main-Class': 'Compiler'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}
