@@ -1,4 +1,4 @@
-## NLVM 编译器技术文档（单文件版）
+## NLVM 编译器技术文档
 
 本文档基于对代码库的实际阅读，围绕 pass/PassManager.java、frontend/irgen/IRGenerator.java、backend/MirGenerator.java 等核心文件，系统说明 NLVM 的目标、架构、流程、设计模式与 API。适用于快速理解与扩展本项目。
 
